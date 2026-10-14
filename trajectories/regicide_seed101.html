@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Regicide trajectory</title>
+<style>
+:root {
+  --bg: #f4f1ea; --panel: #fffdf8; --ink: #23201b; --muted: #6d665b; --line: #d9d2c3;
+  --card: #ffffff; --card-edge: #cfc6b4; --red: #b3261e; --black: #23201b;
+  --accent: #2f5d8a; --accent-soft: #dbe7f3; --good: #2e7d32; --bad: #b3261e;
+  --hp: #c0392b; --hp-track: #eadfd2; --shield: #3b6ea5; --hl: #e0a800;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1a17; --panel: #24221e; --ink: #ece6da; --muted: #a39b8c; --line: #3a372f;
+    --card: #f3efe6; --card-edge: #8c8474; --red: #c62828; --black: #1f1d1a;
+    --accent: #8fb6dc; --accent-soft: #2c3a48; --good: #81c784; --bad: #ef9a9a;
+    --hp: #e57373; --hp-track: #3a332c; --shield: #8fb6dc; --hl: #ffca28;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+       font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 12px; }
+h1 { font-size: 20px; margin: 0; }
+.meta { color: var(--muted); }
+.badge { padding: 2px 10px; border-radius: 999px; font-weight: 600; font-size: 13px; }
+.badge.won { background: color-mix(in srgb, var(--good) 20%, transparent); color: var(--good); }
+.badge.lost { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 12px; }
+.grid > *, .stack > *, .stats { min-width: 0; }
+@media (max-width: 820px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+            margin: 0 0 8px; font-weight: 600; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+
+/* Cards */
+.card { width: 46px; height: 66px; border-radius: 6px; background: var(--card);
+        border: 1px solid var(--card-edge); position: relative; flex: none;
+        box-shadow: 0 1px 2px rgba(0,0,0,.15); color: var(--black); user-select: none; }
+.card.red { color: var(--red); }
+.card .corner { position: absolute; top: 3px; left: 5px; font-weight: 700; font-size: 13px; line-height: 1; }
+.card .corner small { display: block; font-size: 12px; }
+.card .pip { position: absolute; inset: 0; display: grid; place-items: center; font-size: 24px; }
+.card.big { width: 92px; height: 132px; border-radius: 10px; }
+.card.big .corner { font-size: 20px; top: 6px; left: 8px; }
+.card.big .corner small { font-size: 18px; }
+.card.big .pip { font-size: 48px; }
+.card.hl { outline: 3px solid var(--hl); outline-offset: 1px; transform: translateY(-6px); }
+.card.joker .pip { font-size: 20px; }
+.card.royal-in-hand { background: color-mix(in srgb, var(--card) 85%, #c9a227); }
+.cards { display: flex; flex-wrap: wrap; gap: 6px; min-height: 66px; align-items: flex-end; padding-top: 6px; }
+.empty { color: var(--muted); font-style: italic; align-self: center; }
+
+/* Royal */
+.royal { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.royal .stats { min-width: 150px; }
+.stats { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.bar { height: 10px; background: var(--hp-track); border-radius: 5px; overflow: hidden; }
+.bar > div { height: 100%; background: var(--hp); transition: width .25s; }
+.bar { display: flex; }
+.bar > div.incoming { background: repeating-linear-gradient(45deg, var(--hp), var(--hp) 3px, transparent 3px, transparent 6px); }
+.bar.attack > div { background: var(--shield); }
+.stat-label { display: flex; justify-content: space-between; font-size: 13px; }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft);
+        color: var(--accent); font-size: 12px; }
+
+/* Piles */
+.piles { display: flex; gap: 16px; }
+.pile { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.pile-stack { position: relative; width: 50px; height: 92px; }
+.pile-stack span { position: absolute; left: 0; width: 46px; height: 66px; border-radius: 6px;
+                   border: 1px solid var(--card-edge); }
+.pile-stack.draw span { background: repeating-linear-gradient(45deg, #2f5d8a, #2f5d8a 4px, #3d6f9e 4px, #3d6f9e 8px); }
+.pile-stack.discard span { background: var(--card); }
+.pile b { font-size: 16px; }
+.castle { display: flex; gap: 10px; font-size: 13px; }
+.castle div { text-align: center; }
+.castle b { display: block; font-size: 18px; }
+
+/* Players */
+.player { border-top: 1px solid var(--line); padding: 10px 0 6px; }
+.player:first-of-type { border-top: 0; padding-top: 0; }
+.player-head { display: flex; gap: 8px; align-items: baseline; }
+.player-head b { font-size: 15px; }
+.player.active .player-head b { color: var(--accent); }
+.player.active { background: linear-gradient(90deg, var(--accent-soft), transparent 70%);
+                 border-radius: 8px; padding-left: 8px; margin-left: -8px; }
+
+/* Step panel and controls */
+.step-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; align-items: flex-start; }
+.step-cards { min-height: 0; padding-top: 0; }
+.step-title { font-size: 16px; font-weight: 600; }
+.step-title .who { color: var(--accent); }
+.notes { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+         background: var(--panel); color: var(--ink); cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+input[type=range] { flex: 1; min-width: 160px; accent-color: var(--accent); }
+label { color: var(--muted); display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
+@media (max-width: 520px) { input[type=range] { flex-basis: 100%; } }
+.log { max-height: 260px; overflow-y: auto; font-size: 13px; position: relative; }
+.log div { padding: 3px 6px; border-radius: 6px; cursor: pointer; display: flex; gap: 8px; }
+.log div:hover { background: var(--accent-soft); }
+.log div.cur { background: var(--accent-soft); font-weight: 600; }
+.log .t { color: var(--muted); min-width: 52px; }
+.log .luck { color: var(--muted); }
+.result { font-size: 18px; font-weight: 700; }
+.result.won { color: var(--good); } .result.lost { color: var(--bad); }
+.value { color: var(--muted); font-size: 13px; }
+kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Regicide trajectory</h1>
+    <span class="meta" id="meta"></span>
+    <span class="badge" id="badge"></span>
+  </header>
+
+  <div class="panel">
+    <div class="step-head">
+      <div>
+        <div class="step-title" id="stepTitle"></div>
+        <div class="value" id="stepValue"></div>
+      </div>
+      <div class="cards step-cards" id="stepCards"></div>
+    </div>
+    <ul class="notes" id="stepNotes"></ul>
+    <div class="controls">
+      <button id="first" title="First step (Home)">&#x23EE;</button>
+      <button id="prev" title="Previous step (&larr;)">&#x25C0; Prev</button>
+      <button id="play" class="primary" title="Play / pause (space)">&#x25B6; Play</button>
+      <button id="next" title="Next step (&rarr;)">Next &#x25B6;</button>
+      <button id="last" title="Last step (End)">&#x23ED;</button>
+      <input type="range" id="slider" min="0" value="0" aria-label="Step">
+      <span id="counter" class="meta"></span>
+      <label><input type="checkbox" id="luck" checked> show random events</label>
+      <label>speed <select id="speed"><option value="1400">slow</option><option value="700" selected>normal</option><option value="250">fast</option></select></label>
+    </div>
+    <div class="meta"><kbd>&larr;</kbd> <kbd>&rarr;</kbd> step &middot; <kbd>space</kbd> play/pause &middot; <kbd>Home</kbd>/<kbd>End</kbd> jump</div>
+  </div>
+
+  <div class="grid" style="margin-top:12px">
+    <div class="stack">
+      <div class="panel">
+        <h2>Active royal</h2>
+        <div id="royal"></div>
+      </div>
+      <div class="panel">
+        <h2>Piles</h2>
+        <div class="piles" id="piles"></div>
+      </div>
+      <div class="panel">
+        <h2>Castle (royals left)</h2>
+        <div class="castle" id="castle"></div>
+      </div>
+    </div>
+    <div class="stack">
+      <div class="panel">
+        <h2>Played against the royal</h2>
+        <div class="cards" id="played"></div>
+      </div>
+      <div class="panel">
+        <h2>Hands</h2>
+        <div id="hands"></div>
+      </div>
+      <div class="panel">
+        <h2>Game log</h2>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const GAME = {"frames": [{"turn": 0, "phase": "reveal", "current": 0, "royal": null, "royalsLeft": {"J": 4, "Q": 4, "K": 4}, "defeated": 0, "draw": 22, "drawTop": null, "discard": 0, "played": [], "hands": [["AC", "3H", "4S", "5C", "6H"], ["2D", "3C", "5S", "7D", "7S"], ["AD", "2C", "2H", "4D", "10H"], ["2S", "7H", "8H", "10C", "10S"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "reveals royal JD", "highlight": ["JD"], "notes": []}, {"turn": 1, "phase": "play", "current": 0, "royal": {"card": "JD", "hp": 20, "incoming": 0, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Diamonds", "joker": false}, "royalsLeft": {"J": 3, "Q": 4, "K": 4}, "defeated": 0, "draw": 22, "drawTop": null, "discard": 0, "played": [], "hands": [["AC", "3H", "4S", "5C", "6H"], ["2D", "3C", "5S", "7D", "7S"], ["AD", "2C", "2H", "4D", "10H"], ["2S", "7H", "8H", "10C", "10S"]], "kind": "player", "actor": "P0", "value": -0.24, "action": "plays 5C", "highlight": ["5C"], "notes": ["JD takes 10 damage -> hp 10", "JD retaliates for 10"]}, {"turn": 1, "phase": "discard", "current": 0, "royal": {"card": "JD", "hp": 10, "incoming": 0, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Diamonds", "joker": false}, "royalsLeft": {"J": 3, "Q": 4, "K": 4}, "defeated": 0, "draw": 22, "drawTop": null, "discard": 0, "played": ["5C"], "hands": [["AC", "3H", "4S", "6H"], ["2D", "3C", "5S", "7D", "7S"], ["AD", "2C", "2H", "4D", "10H"], ["2S", "7H", "8H", "10C", "10S"]], "kind": "player", "actor": "P0", "value": -0.169, "action": "discards AC 4S 6H", "highlight": ["AC", "4S", "6H"], "notes": []}, {"turn": 2, "phase": "play", "current": 1, "royal": {"card": "JD", "hp": 10, "incoming": 0, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Diamonds", "joker": false}, "royalsLeft": {"J": 3, "Q": 4, "K": 4}, "defeated": 0, "draw": 22, "drawTop": null, "discard": 3, "played": ["5C"], "hands": [["3H"], ["2D", "3C", "5S", "7D", "7S"], ["AD", "2C", "2H", "4D", "10H"], ["2S", "7H", "8H", "10C", "10S"]], "kind": "player", "actor": "P1", "value": -0.328, "action": "plays 5S", "highlight": ["5S"], "notes": ["JD takes 5 damage -> hp 5", "Spades shield JD's attack to 5", "JD retaliates for 5"]}, {"turn": 2, "phase": "discard", "current": 1, "royal": {"card": "JD", "hp": 5, "incoming": 0, "maxHp": 20, "attack": 5, "baseAttack": 10, "shield": 5, "immune": "Diamonds", "joker": false}, "royalsLeft": {"J": 3, "Q": 4, "K": 4}, "defeated": 0, "draw": 22, "drawTop": null, "discard": 3, "played": ["5C", "5S"], "hands": [["3H"], ["2D", "3C", "7D", "7S"], ["AD", "2C", "2H", "4D", "10H"], ["2S", "7H", "8H", "10C", "10S"]], "kind": "player", "actor": "P1", "value": -0.226, "action": "discards 2D 7S", "highlight": ["2D", "7S"], "notes": []}, {"turn": 3, "phase": "play", "current": 2, "royal": {"card": "JD", "hp": 5, "incoming": 0, "maxHp": 20, "attack": 5, "baseAttack": 10, "shield": 5, "immune": "Diamonds", "joker": false}, "royalsLeft": {"J": 3, "Q": 4, "K": 4}, "defeated": 0, "draw": 22, "drawTop": null, "discard": 5, "played": ["5C", "5S"], "hands": [["3H"], ["3C", "7D"], ["AD", "2C", "2H", "4D", "10H"], ["2S", "7H", "8H", "10C", "10S"]], "kind": "player", "actor": "P2", "value": -0.208, "action": "plays 2C", "highlight": ["2C"], "notes": ["JD takes 4 damage -> hp 1", "JD retaliates for 5"]}, {"turn": 3, "phase": "discard", "current": 2, "royal": {"card": "JD", "hp": 1, "incoming": 0, "maxHp": 20, "attack": 5, "baseAttack": 10, "shield": 5, "immune": "Diamonds", "joker": false}, "royalsLeft": {"J": 3, "Q": 4, "K": 4}, "defeated": 0, "draw": 22, "drawTop": null, "discard": 5, "played": ["2C", "5C", "5S"], "hands": [["3H"], ["3C", "7D"], ["AD", "2H", "4D", "10H"], ["2S", "7H", "8H", "10C", "10S"]], "kind": "player", "actor": "P2", "value": -0.403, "action": "discards 4D 10H", "highlight": ["4D", "10H"], "notes": []}, {"turn": 4, "phase": "play", "current": 3, "royal": {"card": "JD", "hp": 1, "incoming": 0, "maxHp": 20, "attack": 5, "baseAttack": 10, "shield": 5, "immune": "Diamonds", "joker": false}, "royalsLeft": {"J": 3, "Q": 4, "K": 4}, "defeated": 0, "draw": 22, "drawTop": null, "discard": 7, "played": ["2C", "5C", "5S"], "hands": [["3H"], ["3C", "7D"], ["AD", "2H"], ["2S", "7H", "8H", "10C", "10S"]], "kind": "player", "actor": "P3", "value": -0.688, "action": "plays 10C", "highlight": ["10C"], "notes": ["JD defeated (removed from the game)"]}, {"turn": 4, "phase": "reveal", "current": 3, "royal": null, "royalsLeft": {"J": 3, "Q": 4, "K": 4}, "defeated": 1, "draw": 22, "drawTop": null, "discard": 11, "played": [], "hands": [["3H"], ["3C", "7D"], ["AD", "2H"], ["2S", "7H", "8H", "10S"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "reveals royal JC", "highlight": ["JC"], "notes": []}, {"turn": 5, "phase": "play", "current": 3, "royal": {"card": "JC", "hp": 20, "incoming": 0, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 22, "drawTop": null, "discard": 11, "played": [], "hands": [["3H"], ["3C", "7D"], ["AD", "2H"], ["2S", "7H", "8H", "10S"]], "kind": "player", "actor": "P3", "value": -0.854, "action": "plays 10S", "highlight": ["10S"], "notes": ["JC takes 10 damage -> hp 10", "Spades shield JC's attack to 0", "JC has no attack left; turn passes"]}, {"turn": 6, "phase": "play", "current": 0, "royal": {"card": "JC", "hp": 10, "incoming": 0, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 22, "drawTop": null, "discard": 11, "played": ["10S"], "hands": [["3H"], ["3C", "7D"], ["AD", "2H"], ["2S", "7H", "8H"]], "kind": "player", "actor": "P0", "value": -0.499, "action": "yields (plays nothing)", "highlight": [], "notes": ["JC takes 0 damage -> hp 10", "JC has no attack left; turn passes"]}, {"turn": 7, "phase": "play", "current": 1, "royal": {"card": "JC", "hp": 10, "incoming": 0, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 22, "drawTop": null, "discard": 11, "played": ["10S"], "hands": [["3H"], ["3C", "7D"], ["AD", "2H"], ["2S", "7H", "8H"]], "kind": "player", "actor": "P1", "value": -0.384, "action": "plays 7D", "highlight": ["7D"], "notes": ["JC takes 7 damage -> hp 3", "JC has no attack left; turn passes"]}, {"turn": 7, "phase": "resolve", "current": 1, "royal": {"card": "JC", "hp": 10, "incoming": 7, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 22, "drawTop": null, "discard": 11, "played": ["7D", "10S"], "hands": [["3H"], ["3C"], ["AD", "2H"], ["2S", "7H", "8H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P1 draws 5H", "highlight": ["5H"], "notes": []}, {"turn": 7, "phase": "resolve", "current": 1, "royal": {"card": "JC", "hp": 10, "incoming": 7, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 21, "drawTop": null, "discard": 11, "played": ["7D", "10S"], "hands": [["3H"], ["3C", "5H"], ["AD", "2H"], ["2S", "7H", "8H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P2 draws 4C", "highlight": ["4C"], "notes": []}, {"turn": 7, "phase": "resolve", "current": 1, "royal": {"card": "JC", "hp": 10, "incoming": 7, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 20, "drawTop": null, "discard": 11, "played": ["7D", "10S"], "hands": [["3H"], ["3C", "5H"], ["AD", "2H", "4C"], ["2S", "7H", "8H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P3 draws AH", "highlight": ["AH"], "notes": []}, {"turn": 7, "phase": "resolve", "current": 1, "royal": {"card": "JC", "hp": 10, "incoming": 7, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 19, "drawTop": null, "discard": 11, "played": ["7D", "10S"], "hands": [["3H"], ["3C", "5H"], ["AD", "2H", "4C"], ["AH", "2S", "7H", "8H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P0 draws 9D", "highlight": ["9D"], "notes": []}, {"turn": 7, "phase": "resolve", "current": 1, "royal": {"card": "JC", "hp": 10, "incoming": 7, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 18, "drawTop": null, "discard": 11, "played": ["7D", "10S"], "hands": [["3H", "9D"], ["3C", "5H"], ["AD", "2H", "4C"], ["AH", "2S", "7H", "8H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P1 draws 8D", "highlight": ["8D"], "notes": []}, {"turn": 7, "phase": "resolve", "current": 1, "royal": {"card": "JC", "hp": 10, "incoming": 7, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 17, "drawTop": null, "discard": 11, "played": ["7D", "10S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["AD", "2H", "4C"], ["AH", "2S", "7H", "8H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P2 draws 8C", "highlight": ["8C"], "notes": []}, {"turn": 7, "phase": "resolve", "current": 1, "royal": {"card": "JC", "hp": 10, "incoming": 7, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 16, "drawTop": null, "discard": 11, "played": ["7D", "10S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["AD", "2H", "4C", "8C"], ["AH", "2S", "7H", "8H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P3 draws 9S", "highlight": ["9S"], "notes": []}, {"turn": 8, "phase": "play", "current": 2, "royal": {"card": "JC", "hp": 3, "incoming": 0, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 15, "drawTop": null, "discard": 11, "played": ["7D", "10S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["AD", "2H", "4C", "8C"], ["AH", "2S", "7H", "8H", "9S"]], "kind": "player", "actor": "P2", "value": -0.073, "action": "plays AD", "highlight": ["AD"], "notes": ["JC takes 1 damage -> hp 2", "JC has no attack left; turn passes"]}, {"turn": 8, "phase": "resolve", "current": 2, "royal": {"card": "JC", "hp": 3, "incoming": 1, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 15, "drawTop": null, "discard": 11, "played": ["AD", "7D", "10S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "8C"], ["AH", "2S", "7H", "8H", "9S"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P2 draws 4H", "highlight": ["4H"], "notes": []}, {"turn": 9, "phase": "play", "current": 3, "royal": {"card": "JC", "hp": 2, "incoming": 0, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 14, "drawTop": null, "discard": 11, "played": ["AD", "7D", "10S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["AH", "2S", "7H", "8H", "9S"]], "kind": "player", "actor": "P3", "value": -0.117, "action": "plays 8H", "highlight": ["8H"], "notes": ["JC defeated (removed from the game)"]}, {"turn": 9, "phase": "resolve", "current": 3, "royal": {"card": "JC", "hp": 2, "incoming": 8, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 14, "drawTop": null, "discard": 11, "played": ["AD", "7D", "8H", "10S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["AH", "2S", "7H", "9S"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 4S from the discard pile to the draw pile", "highlight": ["4S"], "notes": []}, {"turn": 9, "phase": "resolve", "current": 3, "royal": {"card": "JC", "hp": 2, "incoming": 8, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 15, "drawTop": null, "discard": 10, "played": ["AD", "7D", "8H", "10S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["AH", "2S", "7H", "9S"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 5C from the discard pile to the draw pile", "highlight": ["5C"], "notes": []}, {"turn": 9, "phase": "resolve", "current": 3, "royal": {"card": "JC", "hp": 2, "incoming": 8, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 16, "drawTop": null, "discard": 9, "played": ["AD", "7D", "8H", "10S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["AH", "2S", "7H", "9S"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 4D from the discard pile to the draw pile", "highlight": ["4D"], "notes": []}, {"turn": 9, "phase": "resolve", "current": 3, "royal": {"card": "JC", "hp": 2, "incoming": 8, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 17, "drawTop": null, "discard": 8, "played": ["AD", "7D", "8H", "10S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["AH", "2S", "7H", "9S"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 7S from the discard pile to the draw pile", "highlight": ["7S"], "notes": []}, {"turn": 9, "phase": "resolve", "current": 3, "royal": {"card": "JC", "hp": 2, "incoming": 8, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 18, "drawTop": null, "discard": 7, "played": ["AD", "7D", "8H", "10S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["AH", "2S", "7H", "9S"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns AC from the discard pile to the draw pile", "highlight": ["AC"], "notes": []}, {"turn": 9, "phase": "resolve", "current": 3, "royal": {"card": "JC", "hp": 2, "incoming": 8, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 19, "drawTop": null, "discard": 6, "played": ["AD", "7D", "8H", "10S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["AH", "2S", "7H", "9S"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 5S from the discard pile to the draw pile", "highlight": ["5S"], "notes": []}, {"turn": 9, "phase": "resolve", "current": 3, "royal": {"card": "JC", "hp": 2, "incoming": 8, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 20, "drawTop": null, "discard": 5, "played": ["AD", "7D", "8H", "10S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["AH", "2S", "7H", "9S"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 6H from the discard pile to the draw pile", "highlight": ["6H"], "notes": []}, {"turn": 9, "phase": "resolve", "current": 3, "royal": {"card": "JC", "hp": 2, "incoming": 8, "maxHp": 20, "attack": 0, "baseAttack": 10, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 1, "draw": 21, "drawTop": null, "discard": 4, "played": ["AD", "7D", "8H", "10S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["AH", "2S", "7H", "9S"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 2D from the discard pile to the draw pile", "highlight": ["2D"], "notes": []}, {"turn": 9, "phase": "reveal", "current": 3, "royal": null, "royalsLeft": {"J": 2, "Q": 4, "K": 4}, "defeated": 2, "draw": 22, "drawTop": null, "discard": 7, "played": [], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["AH", "2S", "7H", "9S"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "reveals royal JH", "highlight": ["JH"], "notes": []}, {"turn": 10, "phase": "play", "current": 3, "royal": {"card": "JH", "hp": 20, "incoming": 0, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 22, "drawTop": null, "discard": 7, "played": [], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["AH", "2S", "7H", "9S"]], "kind": "player", "actor": "P3", "value": -0.176, "action": "plays 9S", "highlight": ["9S"], "notes": ["JH takes 9 damage -> hp 11", "Spades shield JH's attack to 1", "JH retaliates for 1"]}, {"turn": 10, "phase": "discard", "current": 3, "royal": {"card": "JH", "hp": 11, "incoming": 0, "maxHp": 20, "attack": 1, "baseAttack": 10, "shield": 9, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 22, "drawTop": null, "discard": 7, "played": ["9S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["AH", "2S", "7H"]], "kind": "player", "actor": "P3", "value": -0.08, "action": "discards AH", "highlight": ["AH"], "notes": []}, {"turn": 11, "phase": "play", "current": 0, "royal": {"card": "JH", "hp": 11, "incoming": 0, "maxHp": 20, "attack": 1, "baseAttack": 10, "shield": 9, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 22, "drawTop": null, "discard": 8, "played": ["9S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["2S", "7H"]], "kind": "player", "actor": "P0", "value": -0.411, "action": "yields (plays nothing)", "highlight": [], "notes": ["JH takes 0 damage -> hp 11", "JH retaliates for 1"]}, {"turn": 11, "phase": "discard", "current": 0, "royal": {"card": "JH", "hp": 11, "incoming": 0, "maxHp": 20, "attack": 1, "baseAttack": 10, "shield": 9, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 22, "drawTop": null, "discard": 8, "played": ["9S"], "hands": [["3H", "9D"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["2S", "7H"]], "kind": "player", "actor": "P0", "value": -0.314, "action": "discards 9D", "highlight": ["9D"], "notes": []}, {"turn": 12, "phase": "play", "current": 1, "royal": {"card": "JH", "hp": 11, "incoming": 0, "maxHp": 20, "attack": 1, "baseAttack": 10, "shield": 9, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 22, "drawTop": null, "discard": 9, "played": ["9S"], "hands": [["3H"], ["3C", "5H", "8D"], ["2H", "4C", "4H", "8C"], ["2S", "7H"]], "kind": "player", "actor": "P1", "value": -0.207, "action": "plays 8D", "highlight": ["8D"], "notes": ["JH takes 8 damage -> hp 3", "JH retaliates for 1"]}, {"turn": 12, "phase": "resolve", "current": 1, "royal": {"card": "JH", "hp": 11, "incoming": 8, "maxHp": 20, "attack": 1, "baseAttack": 10, "shield": 9, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 22, "drawTop": null, "discard": 9, "played": ["8D", "9S"], "hands": [["3H"], ["3C", "5H"], ["2H", "4C", "4H", "8C"], ["2S", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P1 draws 7C", "highlight": ["7C"], "notes": []}, {"turn": 12, "phase": "resolve", "current": 1, "royal": {"card": "JH", "hp": 11, "incoming": 8, "maxHp": 20, "attack": 1, "baseAttack": 10, "shield": 9, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 21, "drawTop": null, "discard": 9, "played": ["8D", "9S"], "hands": [["3H"], ["3C", "5H", "7C"], ["2H", "4C", "4H", "8C"], ["2S", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P2 draws JK", "highlight": ["JK"], "notes": []}, {"turn": 12, "phase": "resolve", "current": 1, "royal": {"card": "JH", "hp": 11, "incoming": 8, "maxHp": 20, "attack": 1, "baseAttack": 10, "shield": 9, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 20, "drawTop": null, "discard": 9, "played": ["8D", "9S"], "hands": [["3H"], ["3C", "5H", "7C"], ["JK", "2H", "4C", "4H", "8C"], ["2S", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P3 draws 6D", "highlight": ["6D"], "notes": []}, {"turn": 12, "phase": "resolve", "current": 1, "royal": {"card": "JH", "hp": 11, "incoming": 8, "maxHp": 20, "attack": 1, "baseAttack": 10, "shield": 9, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 19, "drawTop": null, "discard": 9, "played": ["8D", "9S"], "hands": [["3H"], ["3C", "5H", "7C"], ["JK", "2H", "4C", "4H", "8C"], ["2S", "6D", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P0 draws AS", "highlight": ["AS"], "notes": []}, {"turn": 12, "phase": "resolve", "current": 1, "royal": {"card": "JH", "hp": 11, "incoming": 8, "maxHp": 20, "attack": 1, "baseAttack": 10, "shield": 9, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 18, "drawTop": null, "discard": 9, "played": ["8D", "9S"], "hands": [["AS", "3H"], ["3C", "5H", "7C"], ["JK", "2H", "4C", "4H", "8C"], ["2S", "6D", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P1 draws JK", "highlight": ["JK"], "notes": []}, {"turn": 12, "phase": "resolve", "current": 1, "royal": {"card": "JH", "hp": 11, "incoming": 8, "maxHp": 20, "attack": 1, "baseAttack": 10, "shield": 9, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 17, "drawTop": null, "discard": 9, "played": ["8D", "9S"], "hands": [["AS", "3H"], ["JK", "3C", "5H", "7C"], ["JK", "2H", "4C", "4H", "8C"], ["2S", "6D", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P3 draws 3S", "highlight": ["3S"], "notes": []}, {"turn": 12, "phase": "resolve", "current": 1, "royal": {"card": "JH", "hp": 11, "incoming": 8, "maxHp": 20, "attack": 1, "baseAttack": 10, "shield": 9, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 16, "drawTop": null, "discard": 9, "played": ["8D", "9S"], "hands": [["AS", "3H"], ["JK", "3C", "5H", "7C"], ["JK", "2H", "4C", "4H", "8C"], ["2S", "3S", "6D", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P0 draws 3D", "highlight": ["3D"], "notes": []}, {"turn": 12, "phase": "resolve", "current": 1, "royal": {"card": "JH", "hp": 11, "incoming": 8, "maxHp": 20, "attack": 1, "baseAttack": 10, "shield": 9, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 15, "drawTop": null, "discard": 9, "played": ["8D", "9S"], "hands": [["AS", "3D", "3H"], ["JK", "3C", "5H", "7C"], ["JK", "2H", "4C", "4H", "8C"], ["2S", "3S", "6D", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P1 draws 6C", "highlight": ["6C"], "notes": []}, {"turn": 12, "phase": "discard", "current": 1, "royal": {"card": "JH", "hp": 3, "incoming": 0, "maxHp": 20, "attack": 1, "baseAttack": 10, "shield": 9, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 14, "drawTop": null, "discard": 9, "played": ["8D", "9S"], "hands": [["AS", "3D", "3H"], ["JK", "3C", "5H", "6C", "7C"], ["JK", "2H", "4C", "4H", "8C"], ["2S", "3S", "6D", "7H"]], "kind": "player", "actor": "P1", "value": 0.008, "action": "discards 3C 6C", "highlight": ["3C", "6C"], "notes": []}, {"turn": 13, "phase": "play", "current": 2, "royal": {"card": "JH", "hp": 3, "incoming": 0, "maxHp": 20, "attack": 1, "baseAttack": 10, "shield": 9, "immune": "Hearts", "joker": false}, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 2, "draw": 14, "drawTop": null, "discard": 11, "played": ["8D", "9S"], "hands": [["AS", "3D", "3H"], ["JK", "5H", "7C"], ["JK", "2H", "4C", "4H", "8C"], ["2S", "3S", "6D", "7H"]], "kind": "player", "actor": "P2", "value": 0.016, "action": "plays 8C", "highlight": ["8C"], "notes": ["JH defeated (removed from the game)"]}, {"turn": 13, "phase": "reveal", "current": 2, "royal": null, "royalsLeft": {"J": 1, "Q": 4, "K": 4}, "defeated": 3, "draw": 14, "drawTop": null, "discard": 14, "played": [], "hands": [["AS", "3D", "3H"], ["JK", "5H", "7C"], ["JK", "2H", "4C", "4H"], ["2S", "3S", "6D", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "reveals royal JS", "highlight": ["JS"], "notes": []}, {"turn": 14, "phase": "play", "current": 2, "royal": {"card": "JS", "hp": 20, "incoming": 0, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 14, "drawTop": null, "discard": 14, "played": [], "hands": [["AS", "3D", "3H"], ["JK", "5H", "7C"], ["JK", "2H", "4C", "4H"], ["2S", "3S", "6D", "7H"]], "kind": "player", "actor": "P2", "value": -0.235, "action": "plays 4C", "highlight": ["4C"], "notes": ["JS takes 8 damage -> hp 12", "JS retaliates for 10"]}, {"turn": 14, "phase": "discard", "current": 2, "royal": {"card": "JS", "hp": 12, "incoming": 0, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 14, "drawTop": null, "discard": 14, "played": ["4C"], "hands": [["AS", "3D", "3H"], ["JK", "5H", "7C"], ["JK", "2H", "4H"], ["2S", "3S", "6D", "7H"]], "kind": "player", "actor": "P2", "value": -0.213, "action": "discards JK 4H", "highlight": ["JK", "4H"], "notes": []}, {"turn": 15, "phase": "play", "current": 3, "royal": {"card": "JS", "hp": 12, "incoming": 0, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 14, "drawTop": null, "discard": 16, "played": ["4C"], "hands": [["AS", "3D", "3H"], ["JK", "5H", "7C"], ["2H"], ["2S", "3S", "6D", "7H"]], "kind": "player", "actor": "P3", "value": -0.187, "action": "plays 6D", "highlight": ["6D"], "notes": ["JS takes 6 damage -> hp 6", "JS retaliates for 10"]}, {"turn": 15, "phase": "resolve", "current": 3, "royal": {"card": "JS", "hp": 12, "incoming": 6, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 14, "drawTop": null, "discard": 16, "played": ["4C", "6D"], "hands": [["AS", "3D", "3H"], ["JK", "5H", "7C"], ["2H"], ["2S", "3S", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P3 draws 9H", "highlight": ["9H"], "notes": []}, {"turn": 15, "phase": "resolve", "current": 3, "royal": {"card": "JS", "hp": 12, "incoming": 6, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 13, "drawTop": null, "discard": 16, "played": ["4C", "6D"], "hands": [["AS", "3D", "3H"], ["JK", "5H", "7C"], ["2H"], ["2S", "3S", "7H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P0 draws 6S", "highlight": ["6S"], "notes": []}, {"turn": 15, "phase": "resolve", "current": 3, "royal": {"card": "JS", "hp": 12, "incoming": 6, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 12, "drawTop": null, "discard": 16, "played": ["4C", "6D"], "hands": [["AS", "3D", "3H", "6S"], ["JK", "5H", "7C"], ["2H"], ["2S", "3S", "7H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P1 draws 9C", "highlight": ["9C"], "notes": []}, {"turn": 15, "phase": "resolve", "current": 3, "royal": {"card": "JS", "hp": 12, "incoming": 6, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 11, "drawTop": null, "discard": 16, "played": ["4C", "6D"], "hands": [["AS", "3D", "3H", "6S"], ["JK", "5H", "7C", "9C"], ["2H"], ["2S", "3S", "7H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P2 draws 8S", "highlight": ["8S"], "notes": []}, {"turn": 15, "phase": "resolve", "current": 3, "royal": {"card": "JS", "hp": 12, "incoming": 6, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 10, "drawTop": null, "discard": 16, "played": ["4C", "6D"], "hands": [["AS", "3D", "3H", "6S"], ["JK", "5H", "7C", "9C"], ["2H", "8S"], ["2S", "3S", "7H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P3 draws 5D", "highlight": ["5D"], "notes": []}, {"turn": 15, "phase": "resolve", "current": 3, "royal": {"card": "JS", "hp": 12, "incoming": 6, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 9, "drawTop": null, "discard": 16, "played": ["4C", "6D"], "hands": [["AS", "3D", "3H", "6S"], ["JK", "5H", "7C", "9C"], ["2H", "8S"], ["2S", "3S", "5D", "7H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P0 draws 10D", "highlight": ["10D"], "notes": []}, {"turn": 15, "phase": "discard", "current": 3, "royal": {"card": "JS", "hp": 6, "incoming": 0, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 8, "drawTop": null, "discard": 16, "played": ["4C", "6D"], "hands": [["AS", "3D", "3H", "6S", "10D"], ["JK", "5H", "7C", "9C"], ["2H", "8S"], ["2S", "3S", "5D", "7H", "9H"]], "kind": "player", "actor": "P3", "value": -0.054, "action": "discards 2S 3S 5D 7H", "highlight": ["2S", "3S", "5D", "7H"], "notes": []}, {"turn": 16, "phase": "play", "current": 0, "royal": {"card": "JS", "hp": 6, "incoming": 0, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 8, "drawTop": null, "discard": 20, "played": ["4C", "6D"], "hands": [["AS", "3D", "3H", "6S", "10D"], ["JK", "5H", "7C", "9C"], ["2H", "8S"], ["9H"]], "kind": "player", "actor": "P0", "value": -0.419, "action": "plays 10D", "highlight": ["10D"], "notes": ["JS defeated (removed from the game)"]}, {"turn": 16, "phase": "resolve", "current": 0, "royal": {"card": "JS", "hp": 6, "incoming": 10, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 8, "drawTop": null, "discard": 20, "played": ["4C", "6D", "10D"], "hands": [["AS", "3D", "3H", "6S"], ["JK", "5H", "7C", "9C"], ["2H", "8S"], ["9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P0 draws 4D", "highlight": ["4D"], "notes": []}, {"turn": 16, "phase": "resolve", "current": 0, "royal": {"card": "JS", "hp": 6, "incoming": 10, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 7, "drawTop": null, "discard": 20, "played": ["4C", "6D", "10D"], "hands": [["AS", "3D", "3H", "4D", "6S"], ["JK", "5H", "7C", "9C"], ["2H", "8S"], ["9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P1 draws 7S", "highlight": ["7S"], "notes": []}, {"turn": 16, "phase": "resolve", "current": 0, "royal": {"card": "JS", "hp": 6, "incoming": 10, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 6, "drawTop": null, "discard": 20, "played": ["4C", "6D", "10D"], "hands": [["AS", "3D", "3H", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["2H", "8S"], ["9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P2 draws 5S", "highlight": ["5S"], "notes": []}, {"turn": 16, "phase": "resolve", "current": 0, "royal": {"card": "JS", "hp": 6, "incoming": 10, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 5, "drawTop": null, "discard": 20, "played": ["4C", "6D", "10D"], "hands": [["AS", "3D", "3H", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["2H", "5S", "8S"], ["9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P3 draws 5C", "highlight": ["5C"], "notes": []}, {"turn": 16, "phase": "resolve", "current": 0, "royal": {"card": "JS", "hp": 6, "incoming": 10, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 4, "drawTop": null, "discard": 20, "played": ["4C", "6D", "10D"], "hands": [["AS", "3D", "3H", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["2H", "5S", "8S"], ["5C", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P2 draws AC", "highlight": ["AC"], "notes": []}, {"turn": 16, "phase": "resolve", "current": 0, "royal": {"card": "JS", "hp": 6, "incoming": 10, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 3, "drawTop": null, "discard": 20, "played": ["4C", "6D", "10D"], "hands": [["AS", "3D", "3H", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "5S", "8S"], ["5C", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P3 draws 2D", "highlight": ["2D"], "notes": []}, {"turn": 16, "phase": "resolve", "current": 0, "royal": {"card": "JS", "hp": 6, "incoming": 10, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 2, "drawTop": null, "discard": 20, "played": ["4C", "6D", "10D"], "hands": [["AS", "3D", "3H", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "5S", "8S"], ["2D", "5C", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P2 draws 4S", "highlight": ["4S"], "notes": []}, {"turn": 16, "phase": "resolve", "current": 0, "royal": {"card": "JS", "hp": 6, "incoming": 10, "maxHp": 20, "attack": 10, "baseAttack": 10, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 3, "draw": 1, "drawTop": null, "discard": 20, "played": ["4C", "6D", "10D"], "hands": [["AS", "3D", "3H", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["2D", "5C", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P3 draws 6H", "highlight": ["6H"], "notes": []}, {"turn": 16, "phase": "reveal", "current": 0, "royal": null, "royalsLeft": {"J": 0, "Q": 4, "K": 4}, "defeated": 4, "draw": 0, "drawTop": null, "discard": 23, "played": [], "hands": [["AS", "3D", "3H", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["2D", "5C", "6H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "reveals royal QS", "highlight": ["QS"], "notes": []}, {"turn": 17, "phase": "play", "current": 0, "royal": {"card": "QS", "hp": 30, "incoming": 0, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 0, "drawTop": null, "discard": 23, "played": [], "hands": [["AS", "3D", "3H", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["2D", "5C", "6H", "9H"]], "kind": "player", "actor": "P0", "value": -0.586, "action": "plays 3D 3H", "highlight": ["3D", "3H"], "notes": ["QS takes 6 damage -> hp 24", "QS retaliates for 15"]}, {"turn": 17, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 30, "incoming": 6, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 0, "drawTop": null, "discard": 23, "played": ["3D", "3H"], "hands": [["AS", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["2D", "5C", "6H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 10D from the discard pile to the draw pile", "highlight": ["10D"], "notes": []}, {"turn": 17, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 30, "incoming": 6, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 1, "drawTop": null, "discard": 22, "played": ["3D", "3H"], "hands": [["AS", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["2D", "5C", "6H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 9S from the discard pile to the draw pile", "highlight": ["9S"], "notes": []}, {"turn": 17, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 30, "incoming": 6, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 2, "drawTop": null, "discard": 21, "played": ["3D", "3H"], "hands": [["AS", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["2D", "5C", "6H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns AH from the discard pile to the draw pile", "highlight": ["AH"], "notes": []}, {"turn": 17, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 30, "incoming": 6, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 3, "drawTop": null, "discard": 20, "played": ["3D", "3H"], "hands": [["AS", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["2D", "5C", "6H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 8D from the discard pile to the draw pile", "highlight": ["8D"], "notes": []}, {"turn": 17, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 30, "incoming": 6, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 4, "drawTop": null, "discard": 19, "played": ["3D", "3H"], "hands": [["AS", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["2D", "5C", "6H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 8H from the discard pile to the draw pile", "highlight": ["8H"], "notes": []}, {"turn": 17, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 30, "incoming": 6, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 5, "drawTop": null, "discard": 18, "played": ["3D", "3H"], "hands": [["AS", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["2D", "5C", "6H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 9D from the discard pile to the draw pile", "highlight": ["9D"], "notes": []}, {"turn": 17, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 30, "incoming": 6, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 6, "drawTop": null, "discard": 17, "played": ["3D", "3H"], "hands": [["AS", "4D", "6S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["2D", "5C", "6H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P0 draws 9S", "highlight": ["9S"], "notes": []}, {"turn": 17, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 30, "incoming": 6, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 5, "drawTop": null, "discard": 17, "played": ["3D", "3H"], "hands": [["AS", "4D", "6S", "9S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["2D", "5C", "6H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P3 draws AH", "highlight": ["AH"], "notes": []}, {"turn": 17, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 30, "incoming": 6, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 4, "drawTop": null, "discard": 17, "played": ["3D", "3H"], "hands": [["AS", "4D", "6S", "9S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["AH", "2D", "5C", "6H", "9H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P0 draws 8D", "highlight": ["8D"], "notes": []}, {"turn": 17, "phase": "discard", "current": 0, "royal": {"card": "QS", "hp": 24, "incoming": 0, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 3, "drawTop": null, "discard": 17, "played": ["3D", "3H"], "hands": [["AS", "4D", "6S", "8D", "9S"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["AH", "2D", "5C", "6H", "9H"]], "kind": "player", "actor": "P0", "value": -0.24, "action": "discards AS 6S 9S", "highlight": ["AS", "6S", "9S"], "notes": []}, {"turn": 18, "phase": "play", "current": 1, "royal": {"card": "QS", "hp": 24, "incoming": 0, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": "Spades", "joker": false}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 3, "drawTop": null, "discard": 20, "played": ["3D", "3H"], "hands": [["4D", "8D"], ["JK", "5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["AH", "2D", "5C", "6H", "9H"]], "kind": "player", "actor": "P1", "value": -0.199, "action": "plays JK", "highlight": ["JK"], "notes": ["QS takes 0 damage -> hp 24", "QS retaliates for 15"]}, {"turn": 18, "phase": "discard", "current": 1, "royal": {"card": "QS", "hp": 24, "incoming": 0, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 3, "drawTop": null, "discard": 20, "played": ["JK", "3D", "3H"], "hands": [["4D", "8D"], ["5H", "7C", "7S", "9C"], ["AC", "2H", "4S", "5S", "8S"], ["AH", "2D", "5C", "6H", "9H"]], "kind": "player", "actor": "P1", "value": -0.351, "action": "discards 5H 7C 9C", "highlight": ["5H", "7C", "9C"], "notes": []}, {"turn": 19, "phase": "play", "current": 2, "royal": {"card": "QS", "hp": 24, "incoming": 0, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 3, "drawTop": null, "discard": 23, "played": ["JK", "3D", "3H"], "hands": [["4D", "8D"], ["7S"], ["AC", "2H", "4S", "5S", "8S"], ["AH", "2D", "5C", "6H", "9H"]], "kind": "player", "actor": "P2", "value": -0.721, "action": "plays 5S", "highlight": ["5S"], "notes": ["QS takes 5 damage -> hp 19", "Spades shield QS's attack to 10", "QS retaliates for 10"]}, {"turn": 19, "phase": "discard", "current": 2, "royal": {"card": "QS", "hp": 19, "incoming": 0, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 3, "drawTop": null, "discard": 23, "played": ["JK", "3D", "3H", "5S"], "hands": [["4D", "8D"], ["7S"], ["AC", "2H", "4S", "8S"], ["AH", "2D", "5C", "6H", "9H"]], "kind": "player", "actor": "P2", "value": -0.43, "action": "discards AC 4S 8S", "highlight": ["AC", "4S", "8S"], "notes": []}, {"turn": 20, "phase": "play", "current": 3, "royal": {"card": "QS", "hp": 19, "incoming": 0, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 3, "drawTop": null, "discard": 26, "played": ["JK", "3D", "3H", "5S"], "hands": [["4D", "8D"], ["7S"], ["2H"], ["AH", "2D", "5C", "6H", "9H"]], "kind": "player", "actor": "P3", "value": -0.763, "action": "plays 9H", "highlight": ["9H"], "notes": ["QS takes 9 damage -> hp 10", "QS retaliates for 10"]}, {"turn": 20, "phase": "resolve", "current": 3, "royal": {"card": "QS", "hp": 19, "incoming": 9, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 3, "drawTop": null, "discard": 26, "played": ["JK", "3D", "3H", "5S", "9H"], "hands": [["4D", "8D"], ["7S"], ["2H"], ["AH", "2D", "5C", "6H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 8S from the discard pile to the draw pile", "highlight": ["8S"], "notes": []}, {"turn": 20, "phase": "resolve", "current": 3, "royal": {"card": "QS", "hp": 19, "incoming": 9, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 4, "drawTop": null, "discard": 25, "played": ["JK", "3D", "3H", "5S", "9H"], "hands": [["4D", "8D"], ["7S"], ["2H"], ["AH", "2D", "5C", "6H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 7H from the discard pile to the draw pile", "highlight": ["7H"], "notes": []}, {"turn": 20, "phase": "resolve", "current": 3, "royal": {"card": "QS", "hp": 19, "incoming": 9, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 5, "drawTop": null, "discard": 24, "played": ["JK", "3D", "3H", "5S", "9H"], "hands": [["4D", "8D"], ["7S"], ["2H"], ["AH", "2D", "5C", "6H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 10C from the discard pile to the draw pile", "highlight": ["10C"], "notes": []}, {"turn": 20, "phase": "resolve", "current": 3, "royal": {"card": "QS", "hp": 19, "incoming": 9, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 6, "drawTop": null, "discard": 23, "played": ["JK", "3D", "3H", "5S", "9H"], "hands": [["4D", "8D"], ["7S"], ["2H"], ["AH", "2D", "5C", "6H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 4S from the discard pile to the draw pile", "highlight": ["4S"], "notes": []}, {"turn": 20, "phase": "resolve", "current": 3, "royal": {"card": "QS", "hp": 19, "incoming": 9, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 7, "drawTop": null, "discard": 22, "played": ["JK", "3D", "3H", "5S", "9H"], "hands": [["4D", "8D"], ["7S"], ["2H"], ["AH", "2D", "5C", "6H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 9S from the discard pile to the draw pile", "highlight": ["9S"], "notes": []}, {"turn": 20, "phase": "resolve", "current": 3, "royal": {"card": "QS", "hp": 19, "incoming": 9, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 8, "drawTop": null, "discard": 21, "played": ["JK", "3D", "3H", "5S", "9H"], "hands": [["4D", "8D"], ["7S"], ["2H"], ["AH", "2D", "5C", "6H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns AD from the discard pile to the draw pile", "highlight": ["AD"], "notes": []}, {"turn": 20, "phase": "resolve", "current": 3, "royal": {"card": "QS", "hp": 19, "incoming": 9, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 9, "drawTop": null, "discard": 20, "played": ["JK", "3D", "3H", "5S", "9H"], "hands": [["4D", "8D"], ["7S"], ["2H"], ["AH", "2D", "5C", "6H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 10S from the discard pile to the draw pile", "highlight": ["10S"], "notes": []}, {"turn": 20, "phase": "resolve", "current": 3, "royal": {"card": "QS", "hp": 19, "incoming": 9, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 10, "drawTop": null, "discard": 19, "played": ["JK", "3D", "3H", "5S", "9H"], "hands": [["4D", "8D"], ["7S"], ["2H"], ["AH", "2D", "5C", "6H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 8C from the discard pile to the draw pile", "highlight": ["8C"], "notes": []}, {"turn": 20, "phase": "resolve", "current": 3, "royal": {"card": "QS", "hp": 19, "incoming": 9, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 11, "drawTop": null, "discard": 18, "played": ["JK", "3D", "3H", "5S", "9H"], "hands": [["4D", "8D"], ["7S"], ["2H"], ["AH", "2D", "5C", "6H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "Hearts returns 3S from the discard pile to the draw pile", "highlight": ["3S"], "notes": []}, {"turn": 20, "phase": "discard", "current": 3, "royal": {"card": "QS", "hp": 10, "incoming": 0, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 12, "drawTop": null, "discard": 17, "played": ["JK", "3D", "3H", "5S", "9H"], "hands": [["4D", "8D"], ["7S"], ["2H"], ["AH", "2D", "5C", "6H"]], "kind": "player", "actor": "P3", "value": -0.511, "action": "discards 5C 6H", "highlight": ["5C", "6H"], "notes": []}, {"turn": 21, "phase": "play", "current": 0, "royal": {"card": "QS", "hp": 10, "incoming": 0, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 12, "drawTop": null, "discard": 19, "played": ["JK", "3D", "3H", "5S", "9H"], "hands": [["4D", "8D"], ["7S"], ["2H"], ["AH", "2D"]], "kind": "player", "actor": "P0", "value": -0.894, "action": "plays 8D", "highlight": ["8D"], "notes": ["QS takes 8 damage -> hp 2", "QS retaliates for 10"]}, {"turn": 21, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 10, "incoming": 8, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 12, "drawTop": null, "discard": 19, "played": ["JK", "3D", "3H", "5S", "8D", "9H"], "hands": [["4D"], ["7S"], ["2H"], ["AH", "2D"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P0 draws 8H", "highlight": ["8H"], "notes": []}, {"turn": 21, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 10, "incoming": 8, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 11, "drawTop": null, "discard": 19, "played": ["JK", "3D", "3H", "5S", "8D", "9H"], "hands": [["4D", "8H"], ["7S"], ["2H"], ["AH", "2D"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P1 draws 10D", "highlight": ["10D"], "notes": []}, {"turn": 21, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 10, "incoming": 8, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 10, "drawTop": null, "discard": 19, "played": ["JK", "3D", "3H", "5S", "8D", "9H"], "hands": [["4D", "8H"], ["7S", "10D"], ["2H"], ["AH", "2D"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P2 draws 9D", "highlight": ["9D"], "notes": []}, {"turn": 21, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 10, "incoming": 8, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 9, "drawTop": null, "discard": 19, "played": ["JK", "3D", "3H", "5S", "8D", "9H"], "hands": [["4D", "8H"], ["7S", "10D"], ["2H", "9D"], ["AH", "2D"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P3 draws 7H", "highlight": ["7H"], "notes": []}, {"turn": 21, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 10, "incoming": 8, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 8, "drawTop": null, "discard": 19, "played": ["JK", "3D", "3H", "5S", "8D", "9H"], "hands": [["4D", "8H"], ["7S", "10D"], ["2H", "9D"], ["AH", "2D", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P0 draws AD", "highlight": ["AD"], "notes": []}, {"turn": 21, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 10, "incoming": 8, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 7, "drawTop": null, "discard": 19, "played": ["JK", "3D", "3H", "5S", "8D", "9H"], "hands": [["AD", "4D", "8H"], ["7S", "10D"], ["2H", "9D"], ["AH", "2D", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P1 draws 4S", "highlight": ["4S"], "notes": []}, {"turn": 21, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 10, "incoming": 8, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 6, "drawTop": null, "discard": 19, "played": ["JK", "3D", "3H", "5S", "8D", "9H"], "hands": [["AD", "4D", "8H"], ["4S", "7S", "10D"], ["2H", "9D"], ["AH", "2D", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P2 draws 10C", "highlight": ["10C"], "notes": []}, {"turn": 21, "phase": "resolve", "current": 0, "royal": {"card": "QS", "hp": 10, "incoming": 8, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 5, "drawTop": null, "discard": 19, "played": ["JK", "3D", "3H", "5S", "8D", "9H"], "hands": [["AD", "4D", "8H"], ["4S", "7S", "10D"], ["2H", "9D", "10C"], ["AH", "2D", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P3 draws 3S", "highlight": ["3S"], "notes": []}, {"turn": 21, "phase": "discard", "current": 0, "royal": {"card": "QS", "hp": 2, "incoming": 0, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 4, "drawTop": null, "discard": 19, "played": ["JK", "3D", "3H", "5S", "8D", "9H"], "hands": [["AD", "4D", "8H"], ["4S", "7S", "10D"], ["2H", "9D", "10C"], ["AH", "2D", "3S", "7H"]], "kind": "player", "actor": "P0", "value": -0.695, "action": "discards 4D 8H", "highlight": ["4D", "8H"], "notes": []}, {"turn": 22, "phase": "play", "current": 1, "royal": {"card": "QS", "hp": 2, "incoming": 0, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 4, "drawTop": null, "discard": 21, "played": ["JK", "3D", "3H", "5S", "8D", "9H"], "hands": [["AD"], ["4S", "7S", "10D"], ["2H", "9D", "10C"], ["AH", "2D", "3S", "7H"]], "kind": "player", "actor": "P1", "value": -0.665, "action": "yields (plays nothing)", "highlight": [], "notes": ["QS takes 0 damage -> hp 2", "QS retaliates for 10"]}, {"turn": 22, "phase": "discard", "current": 1, "royal": {"card": "QS", "hp": 2, "incoming": 0, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 4, "drawTop": null, "discard": 21, "played": ["JK", "3D", "3H", "5S", "8D", "9H"], "hands": [["AD"], ["4S", "7S", "10D"], ["2H", "9D", "10C"], ["AH", "2D", "3S", "7H"]], "kind": "player", "actor": "P1", "value": -0.584, "action": "discards 7S 10D", "highlight": ["7S", "10D"], "notes": []}, {"turn": 23, "phase": "play", "current": 2, "royal": {"card": "QS", "hp": 2, "incoming": 0, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 4, "drawTop": null, "discard": 23, "played": ["JK", "3D", "3H", "5S", "8D", "9H"], "hands": [["AD"], ["4S"], ["2H", "9D", "10C"], ["AH", "2D", "3S", "7H"]], "kind": "player", "actor": "P2", "value": -0.66, "action": "yields (plays nothing)", "highlight": [], "notes": ["QS takes 0 damage -> hp 2", "QS retaliates for 10"]}, {"turn": 23, "phase": "discard", "current": 2, "royal": {"card": "QS", "hp": 2, "incoming": 0, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 4, "drawTop": null, "discard": 23, "played": ["JK", "3D", "3H", "5S", "8D", "9H"], "hands": [["AD"], ["4S"], ["2H", "9D", "10C"], ["AH", "2D", "3S", "7H"]], "kind": "player", "actor": "P2", "value": -0.742, "action": "discards 2H 10C", "highlight": ["2H", "10C"], "notes": []}, {"turn": 24, "phase": "play", "current": 3, "royal": {"card": "QS", "hp": 2, "incoming": 0, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 4, "drawTop": null, "discard": 25, "played": ["JK", "3D", "3H", "5S", "8D", "9H"], "hands": [["AD"], ["4S"], ["9D"], ["AH", "2D", "3S", "7H"]], "kind": "player", "actor": "P3", "value": -0.965, "action": "plays 2D", "highlight": ["2D"], "notes": ["QS defeated (exact kill: placed on top of the draw pile)"]}, {"turn": 24, "phase": "resolve", "current": 3, "royal": {"card": "QS", "hp": 2, "incoming": 2, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 4, "drawTop": null, "discard": 25, "played": ["JK", "2D", "3D", "3H", "5S", "8D", "9H"], "hands": [["AD"], ["4S"], ["9D"], ["AH", "3S", "7H"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P3 draws 10S", "highlight": ["10S"], "notes": []}, {"turn": 24, "phase": "resolve", "current": 3, "royal": {"card": "QS", "hp": 2, "incoming": 2, "maxHp": 30, "attack": 10, "baseAttack": 15, "shield": 5, "immune": null, "joker": true}, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 4, "draw": 3, "drawTop": null, "discard": 25, "played": ["JK", "2D", "3D", "3H", "5S", "8D", "9H"], "hands": [["AD"], ["4S"], ["9D"], ["AH", "3S", "7H", "10S"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "P0 draws 8C", "highlight": ["8C"], "notes": []}, {"turn": 24, "phase": "reveal", "current": 3, "royal": null, "royalsLeft": {"J": 0, "Q": 3, "K": 4}, "defeated": 5, "draw": 3, "drawTop": "QS", "discard": 32, "played": [], "hands": [["AD", "8C"], ["4S"], ["9D"], ["AH", "3S", "7H", "10S"]], "kind": "luck", "actor": "GameAgent", "value": null, "action": "reveals royal QC", "highlight": ["QC"], "notes": []}, {"turn": 25, "phase": "play", "current": 3, "royal": {"card": "QC", "hp": 30, "incoming": 0, "maxHp": 30, "attack": 15, "baseAttack": 15, "shield": 0, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 0, "Q": 2, "K": 4}, "defeated": 5, "draw": 3, "drawTop": "QS", "discard": 32, "played": [], "hands": [["AD", "8C"], ["4S"], ["9D"], ["AH", "3S", "7H", "10S"]], "kind": "player", "actor": "P3", "value": -1.0, "action": "plays 10S", "highlight": ["10S"], "notes": ["QC takes 10 damage -> hp 20", "Spades shield QC's attack to 5", "QC retaliates for 5"]}, {"turn": 25, "phase": "discard", "current": 3, "royal": {"card": "QC", "hp": 20, "incoming": 0, "maxHp": 30, "attack": 5, "baseAttack": 15, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 0, "Q": 2, "K": 4}, "defeated": 5, "draw": 3, "drawTop": "QS", "discard": 32, "played": ["10S"], "hands": [["AD", "8C"], ["4S"], ["9D"], ["AH", "3S", "7H"]], "kind": "player", "actor": "P3", "value": -1.0, "action": "discards 7H", "highlight": ["7H"], "notes": []}, {"turn": 26, "phase": "play", "current": 0, "royal": {"card": "QC", "hp": 20, "incoming": 0, "maxHp": 30, "attack": 5, "baseAttack": 15, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 0, "Q": 2, "K": 4}, "defeated": 5, "draw": 3, "drawTop": "QS", "discard": 33, "played": ["10S"], "hands": [["AD", "8C"], ["4S"], ["9D"], ["AH", "3S"]], "kind": "player", "actor": "P0", "value": -1.0, "action": "yields (plays nothing)", "highlight": [], "notes": ["QC takes 0 damage -> hp 20", "QC retaliates for 5"]}, {"turn": 26, "phase": "discard", "current": 0, "royal": {"card": "QC", "hp": 20, "incoming": 0, "maxHp": 30, "attack": 5, "baseAttack": 15, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 0, "Q": 2, "K": 4}, "defeated": 5, "draw": 3, "drawTop": "QS", "discard": 33, "played": ["10S"], "hands": [["AD", "8C"], ["4S"], ["9D"], ["AH", "3S"]], "kind": "player", "actor": "P0", "value": -1.0, "action": "discards 8C", "highlight": ["8C"], "notes": []}, {"turn": 27, "phase": "play", "current": 1, "royal": {"card": "QC", "hp": 20, "incoming": 0, "maxHp": 30, "attack": 5, "baseAttack": 15, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 0, "Q": 2, "K": 4}, "defeated": 5, "draw": 3, "drawTop": "QS", "discard": 34, "played": ["10S"], "hands": [["AD"], ["4S"], ["9D"], ["AH", "3S"]], "kind": "player", "actor": "P1", "value": -1.0, "action": "yields (plays nothing)", "highlight": [], "notes": ["QC takes 0 damage -> hp 20"]}, {"turn": 27, "phase": "lost", "current": 1, "royal": {"card": "QC", "hp": 20, "incoming": 0, "maxHp": 30, "attack": 5, "baseAttack": 15, "shield": 10, "immune": "Clubs", "joker": false}, "royalsLeft": {"J": 0, "Q": 2, "K": 4}, "defeated": 5, "draw": 3, "drawTop": "QS", "discard": 34, "played": ["10S"], "hands": [["AD"], ["4S"], ["9D"], ["AH", "3S"]], "kind": "end", "actor": "", "value": null, "action": "The players lose: P1 cannot absorb the attack.", "highlight": [], "notes": [], "won": false}], "label": "4 player(s) \u00b7 hybrid depth 1, sustain \u00b7 seed 101", "maxHand": 5};
+const FRAMES = GAME.frames;
+const SUITS = { C: "♣", S: "♠", H: "♥", D: "♦" };
+const RED = new Set(["H", "D"]);
+const $ = (id) => document.getElementById(id);
+const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]);
+let idx = 0, timer = null;
+
+function parseCard(s) {
+  if (s === "JK") return { rank: "JK", suit: "*" };
+  return { rank: s.slice(0, -1), suit: s.slice(-1) };
+}
+
+function cardEl(s, opts = {}) {
+  const c = parseCard(s);
+  const el = document.createElement("div");
+  el.className = "card" + (RED.has(c.suit) ? " red" : "") + (opts.big ? " big" : "")
+    + (opts.hl ? " hl" : "") + (c.rank === "JK" ? " joker" : "")
+    + (!opts.big && ["J", "Q", "K"].includes(c.rank) ? " royal-in-hand" : "");
+  el.title = s;
+  if (c.rank === "JK") {
+    el.innerHTML = '<span class="corner">JK</span><span class="pip">★</span>';
+  } else {
+    el.innerHTML = `<span class="corner">${c.rank}<small>${SUITS[c.suit]}</small></span>`
+      + `<span class="pip">${["J", "Q", "K"].includes(c.rank) ? c.rank + SUITS[c.suit] : SUITS[c.suit]}</span>`;
+  }
+  return el;
+}
+
+function fillCards(container, cards, highlight = []) {
+  container.innerHTML = "";
+  const left = [...highlight];
+  if (!cards.length) {
+    container.innerHTML = '<span class="empty">none</span>';
+    return;
+  }
+  for (const s of cards) {
+    const i = left.indexOf(s);
+    if (i >= 0) left.splice(i, 1);
+    container.appendChild(cardEl(s, { hl: i >= 0 }));
+  }
+}
+
+function pileEl(kind, count, label, extra) {
+  const wrap = document.createElement("div");
+  wrap.className = "pile";
+  const stack = document.createElement("div");
+  stack.className = "pile-stack " + kind;
+  const layers = count === 0 ? 0 : Math.min(8, 1 + Math.floor(count / 6));
+  for (let i = 0; i < layers; i++) {
+    const s = document.createElement("span");
+    s.style.top = (layers - 1 - i) * 3 + "px";
+    stack.appendChild(s);
+  }
+  if (!layers) stack.innerHTML = '<span style="border-style:dashed;background:none"></span>';
+  wrap.appendChild(stack);
+  wrap.insertAdjacentHTML("beforeend", `<b>${count}</b><span class="meta">${label}</span>${extra || ""}`);
+  return wrap;
+}
+
+function visibleFrames() {
+  if ($("luck").checked) return FRAMES.map((_, i) => i);
+  return FRAMES.map((f, i) => (f.kind === "luck" ? -1 : i)).filter((i) => i >= 0);
+}
+
+function describe(f) {
+  if (f.kind === "end") return f.action;
+  return `${f.actor} ${f.action}`;
+}
+
+function render() {
+  const f = FRAMES[idx];
+  const vis = visibleFrames();
+  const pos = Math.max(0, vis.indexOf(idx));
+  $("slider").max = vis.length - 1;
+  $("slider").value = pos;
+  $("counter").textContent = `step ${pos + 1} / ${vis.length}`;
+
+  // Step description
+  if (f.kind === "end") {
+    $("stepTitle").innerHTML = `<span class="result ${f.won ? "won" : "lost"}">${esc(f.action)}</span>`;
+  } else {
+    const turn = f.turn ? `Turn ${f.turn} · ` : "";
+    $("stepTitle").innerHTML = `${turn}<span class="who">${esc(f.actor)}</span> ${esc(f.action)}`;
+  }
+  $("stepValue").textContent = f.value === null || f.value === undefined ? ""
+    : `search value ${f.value >= 0 ? "+" : ""}${f.value.toFixed(3)} (−1 loss … +1 win)`;
+  $("stepNotes").innerHTML = (f.notes || []).map((n) => `<li>${esc(n)}</li>`).join("");
+  const stepCards = $("stepCards");
+  stepCards.innerHTML = "";
+  for (const s of f.highlight || []) stepCards.appendChild(cardEl(s, { hl: false }));
+  try { history.replaceState(null, "", "#step=" + idx); } catch (e) { /* file:// may refuse */ }
+
+  // Royal
+  const r = f.royal;
+  const royal = $("royal");
+  royal.innerHTML = "";
+  if (!r) {
+    royal.innerHTML = `<span class="empty">${f.kind === "end" ? "none \u2014 every royal has been defeated"
+      : "none (the next royal is about to be revealed)"}</span>`;
+  } else {
+    const box = document.createElement("div");
+    box.className = "royal";
+    box.appendChild(cardEl(r.card, { big: true }));
+    const incoming = Math.min(r.incoming || 0, r.hp);
+    const attackPct = r.baseAttack ? 100 * r.attack / r.baseAttack : 0;
+    box.insertAdjacentHTML("beforeend", `<div class="stats">
+      <div><div class="stat-label"><span>Health</span><b>${r.hp} / ${r.maxHp}</b></div>
+        <div class="bar" title="hatched: damage about to land"><div style="width:${100 * (r.hp - incoming) / r.maxHp}%"></div><div class="incoming" style="width:${100 * incoming / r.maxHp}%"></div></div>
+        ${r.incoming ? `<div class="meta">${r.incoming} damage lands after the random effects</div>` : ""}</div>
+      <div><div class="stat-label"><span>Attack</span><b>${r.attack}${r.shield ? ` <span class="meta">(${r.baseAttack} − ${Math.min(r.shield, r.baseAttack)} Spades)</span>` : ""}</b></div>
+        <div class="bar attack"><div style="width:${attackPct}%"></div></div></div>
+      <div>${r.immune ? `<span class="chip">blocks ${r.immune}</span>` : '<span class="chip">no immunity (Joker)</span>'}</div>
+    </div>`);
+    royal.appendChild(box);
+  }
+
+  // Piles
+  const piles = $("piles");
+  piles.innerHTML = "";
+  piles.appendChild(pileEl("draw", f.draw, "draw pile",
+    f.drawTop ? `<span class="meta">top: ${f.drawTop}</span>` : ""));
+  piles.appendChild(pileEl("discard", f.discard, "discard"));
+
+  // Castle
+  $("castle").innerHTML = ["J", "Q", "K"].map((k) =>
+    `<div><b>${f.royalsLeft[k]}</b>${{ J: "Jacks", Q: "Queens", K: "Kings" }[k]}</div>`).join("")
+    + `<div><b>${f.defeated}</b>defeated</div>`;
+
+  // Played cards
+  fillCards($("played"), f.played);
+
+  // Hands
+  const hands = $("hands");
+  hands.innerHTML = "";
+  f.hands.forEach((hand, p) => {
+    const acting = f.kind === "player" && f.current === p;
+    const turnHolder = f.kind !== "end" && f.current === p && f.royal !== null;
+    const value = hand.reduce((sum, s) => sum + cardValue(s), 0);
+    const div = document.createElement("div");
+    div.className = "player" + (turnHolder ? " active" : "");
+    div.innerHTML = `<div class="player-head"><b>P${p}</b>
+      <span class="meta">${hand.length} / ${GAME.maxHand} cards · value ${value}${acting ? " · to act" : turnHolder ? " · their turn" : ""}</span></div>`;
+    const cards = document.createElement("div");
+    cards.className = "cards";
+    fillCards(cards, hand, acting ? f.highlight : []);
+    div.appendChild(cards);
+    hands.appendChild(div);
+  });
+
+  // Log
+  [...$("log").children].forEach((el) => {
+    el.classList.toggle("cur", Number(el.dataset.i) === idx);
+    el.hidden = !$("luck").checked && FRAMES[Number(el.dataset.i)].kind === "luck";
+  });
+  // Keep the current entry visible by scrolling the log box only (not the page).
+  const log = $("log"), cur = log.querySelector(".cur");
+  if (cur) {
+    const top = cur.offsetTop - log.offsetTop;
+    if (top < log.scrollTop) log.scrollTop = top;
+    else if (top + cur.offsetHeight > log.scrollTop + log.clientHeight)
+      log.scrollTop = top + cur.offsetHeight - log.clientHeight;
+  }
+}
+
+function cardValue(s) {
+  const c = parseCard(s);
+  if (c.rank === "JK") return 10;
+  return { A: 1, J: 20, Q: 30, K: 40 }[c.rank] || Number(c.rank);
+}
+
+function go(i) { idx = i; render(); }
+function step(delta) {
+  const vis = visibleFrames();
+  let pos = vis.indexOf(idx);
+  if (pos < 0) pos = vis.findIndex((i) => i > idx) - (delta > 0 ? 1 : 0);
+  const next = Math.min(vis.length - 1, Math.max(0, pos + delta));
+  go(vis[next]);
+  return next !== pos;
+}
+function togglePlay() {
+  if (timer) { clearInterval(timer); timer = null; $("play").innerHTML = "▶ Play"; return; }
+  if (idx === FRAMES.length - 1) go(0);
+  $("play").innerHTML = "⏸ Pause";
+  timer = setInterval(() => { if (!step(1)) togglePlay(); }, Number($("speed").value));
+}
+
+function buildLog() {
+  const log = $("log");
+  FRAMES.forEach((f, i) => {
+    const div = document.createElement("div");
+    div.dataset.i = i;
+    div.innerHTML = `<span class="t">${f.kind === "end" ? "end" : f.turn ? "T" + f.turn : ""}</span>`
+      + `<span class="${f.kind === "luck" ? "luck" : ""}">${esc(describe(f))}</span>`;
+    div.onclick = () => go(i);
+    log.appendChild(div);
+  });
+}
+
+function init() {
+  $("meta").textContent = GAME.label;  // textContent: no markup
+  const last = FRAMES[FRAMES.length - 1];
+  $("badge").textContent = last.won ? "won" : `lost · ${last.defeated} / 12 royals`;
+  $("badge").className = "badge " + (last.won ? "won" : "lost");
+  buildLog();
+  $("first").onclick = () => go(visibleFrames()[0]);
+  $("last").onclick = () => go(FRAMES.length - 1);
+  $("prev").onclick = () => step(-1);
+  $("next").onclick = () => step(1);
+  $("play").onclick = togglePlay;
+  $("slider").oninput = (e) => go(visibleFrames()[Number(e.target.value)]);
+  $("luck").onchange = () => { if (!$("luck").checked && FRAMES[idx].kind === "luck") step(1); render(); };
+  $("speed").onchange = () => { if (timer) { togglePlay(); togglePlay(); } };
+  document.addEventListener("keydown", (e) => {
+    if (e.target.tagName === "SELECT") return;
+    if (e.key === "ArrowRight") { step(1); e.preventDefault(); }
+    else if (e.key === "ArrowLeft") { step(-1); e.preventDefault(); }
+    else if (e.key === " ") { togglePlay(); e.preventDefault(); }
+    else if (e.key === "Home") go(visibleFrames()[0]);
+    else if (e.key === "End") go(FRAMES.length - 1);
+  });
+  const m = /step=(\d+)/.exec(location.hash);
+  if (m) idx = Math.min(FRAMES.length - 1, Number(m[1]));
+  render();
+}
+init();
+</script>
+</body>
+</html>
